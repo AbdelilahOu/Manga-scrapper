@@ -1,5 +1,0 @@
-# Announcements
-
-- First announcement
-
-# Changes
