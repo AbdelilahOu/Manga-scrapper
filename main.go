@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/PuerkitoBio/goquery"
@@ -18,20 +19,45 @@ type Chapter struct {
 	url  string
 }
 
-var _ = lipgloss.NewStyle().
+type Manga struct {
+	title    string
+	author   string
+	artist   string
+	postedOn string
+	genres   []string
+}
+
+var errorStyle = lipgloss.NewStyle().
 	Bold(true).
 	Foreground(lipgloss.Color("#FAFAFA")).
-	Background(lipgloss.Color("#7D56F4")).
-	PaddingTop(2).
-	PaddingLeft(4).
-	Width(22)
+	Background(lipgloss.Color("#dc2626")).
+	PaddingLeft(2).
+	PaddingRight(2)
 
-var errorStyle = lipgloss.NewStyle().Bold(true).
-	Foreground(lipgloss.Color("red")).
-	Background(lipgloss.Color("white")).
-	Width(22)
+var helpStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#FAFAFA")).
+	Background(lipgloss.Color("#65a30d")).
+	PaddingLeft(2).
+	PaddingRight(2)
 
-func getChapters(url string) (string, []Chapter) {
+var infoStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#FAFAFA")).
+	Background(lipgloss.Color("#0ea5e9")).
+	PaddingLeft(2).
+	PaddingRight(2)
+
+var dialogBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("#2563eb")).
+	Padding(1, 0).
+	BorderTop(true).
+	BorderLeft(true).
+	BorderRight(true).
+	BorderBottom(true)
+
+func getChapters(url string) (Manga, []Chapter) {
 	res, err := http.Get(url)
 	if err != nil {
 		log.Fatalln("error getting the webpage : ", err)
@@ -46,7 +72,6 @@ func getChapters(url string) (string, []Chapter) {
 		log.Fatalln("error loading html : ", err)
 	}
 	// get chapters
-	title := doc.Find(".entry-title").Text()
 	var chapters []Chapter
 	doc.Find("#chapterlist > ul > li").Each(func(i int, s *goquery.Selection) {
 		link := s.Find("a")
@@ -60,7 +85,23 @@ func getChapters(url string) (string, []Chapter) {
 			name: chapterTitle,
 		})
 	})
-	return title, chapters
+	// get manga infos
+	title := doc.Find(".entry-title").Text()
+	artist := doc.Find(".fmed:has(b:contains('Artist')) > span").Text()
+	author := doc.Find(".fmed:has(b:contains('Author')) > span").Text()
+	postedOn := doc.Find(".fmed:has(b:contains('Posted On')) > span").Text()
+	var genres []string
+	doc.Find("div:has(b:contains('Genres')) > span.mgen > a").Each(func(i int, a *goquery.Selection) {
+		genres = append(genres, a.Text())
+	})
+	manga := Manga{
+		title:    strings.TrimSpace(title),
+		artist:   strings.TrimSpace(artist),
+		author:   strings.TrimSpace(author),
+		postedOn: strings.TrimSpace(postedOn),
+		genres:   genres,
+	}
+	return manga, chapters
 }
 
 func createFolder(path string) {
@@ -143,16 +184,65 @@ func downloadFile(URL, fileName string, wg *sync.WaitGroup) error {
 func main() {
 	args := os.Args
 	if len(args) <= 1 {
-		log.Fatalln(errorStyle.Render("No arguments provided."))
+		fmt.Println(errorStyle.Render("No arguments provided."))
+		fmt.Println(helpStyle.Render("Help:"))
+		fmt.Println(infoStyle.Render("Dev: go run main.go 'https://asuratoon.com/manga/<manga name>/'"))
+		fmt.Println(infoStyle.Render("Prod: /manga-scrapper 'https://asuratoon.com/manga/<manga name>/'"))
+		os.Exit(1)
 	}
 	manhwaUrl := args[1]
-	title, chapters := getChapters(manhwaUrl)
+	mangaDetails, chapters := getChapters(manhwaUrl)
 	createFolder("./assets")
-	createFolder("./assets/" + title)
-	for _, chapter := range chapters {
-		chapterPath := "./assets/" + title + "/" + chapter.name
+	createFolder("./assets/" + mangaDetails.title)
+	{
+
+		genreStyle := lipgloss.NewStyle().
+			Width(15).
+			Align(lipgloss.Center).
+			Foreground(lipgloss.Color("#FFF7DB")).
+			Background(lipgloss.AdaptiveColor{Light: "#3b82f6", Dark: "#bfdbfe"}).
+			Padding(0, 3)
+
+		mangaTitle := lipgloss.NewStyle().Width(50).Italic(true).
+			Align(lipgloss.Center).
+			Foreground(lipgloss.Color("#FFF7DB")).
+			Background(lipgloss.AdaptiveColor{Light: "#0284c7", Dark: "#0284c7"}).
+			Bold(true).Render(mangaDetails.title)
+
+		detailStyle := lipgloss.NewStyle().Align(lipgloss.Left)
+		var genres string
+		for i, genre := range mangaDetails.genres {
+			if i%2 == 0 && i > 0 {
+				genres = genres + "\n"
+			}
+			genres = genres + " " + genreStyle.Render(strings.TrimSpace(genre))
+		}
+		mangaInfos := lipgloss.JoinVertical(lipgloss.Left,
+			detailStyle.Render(fmt.Sprintf("• Artist: %s", mangaDetails.artist)),
+			detailStyle.Render(fmt.Sprintf("• Author: %s", mangaDetails.author)),
+			detailStyle.Render(fmt.Sprintf("• Chapters: %d", len(chapters))),
+			detailStyle.Render(fmt.Sprintf("• Posted On: %s", mangaDetails.postedOn)),
+			detailStyle.Render("• Genres :"),
+			detailStyle.Render(genres),
+		)
+		ui := lipgloss.JoinVertical(lipgloss.Center, mangaTitle, mangaInfos)
+
+		dialog := lipgloss.Place(70, 9,
+			lipgloss.Center, lipgloss.Center,
+			dialogBoxStyle.Render(ui),
+			lipgloss.WithWhitespaceChars("猫咪"),
+			lipgloss.WithWhitespaceForeground(lipgloss.AdaptiveColor{Light: "#3b82f6", Dark: "#bfdbfe"}),
+		)
+
+		fmt.Println(dialog)
+	}
+	fmt.Println("")
+	for i := range chapters {
+		chapter := chapters[len(chapters)-1-i]
+		chapterPath := "./assets/" + mangaDetails.title + "/" + chapter.name
 		createFolder(chapterPath)
 		images := getChapterImages(chapter.url)
+		fmt.Println(infoStyle.Render(fmt.Sprintf("getting %s", chapter.name)))
 		downloadImages(images, chapterPath)
 	}
 }
