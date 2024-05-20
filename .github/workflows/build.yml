@@ -1,73 +1,80 @@
-name: Latest Release
+name: build-release-binary
+
+run-name: Create Github Release for GoLang binary
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-    
-
-defaults:
-  run:
-    shell: bash
-
-permissions:
-  contents: write
+    branches:
+      - main
 
 jobs:
-  lint:
-    name: Lint files
-    runs-on: "ubuntu-latest"
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
-        with:
-          go-version: "1.21.6"
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v2.5.2
-        with:
-          version: latest
-  release:
-    name: Create Release
-    runs-on: "ubuntu-latest"
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            release_suffix: ubuntu
-          - os: macos-latest
-            release_suffix: mac
-          - os: windows-latest
-            release_suffix: windows
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v2
-        with:
-          go-version: "1.21.6"
-      - name: Get OS and arch info
-        run: |
-          GOOSARCH=${{matrix.goosarch}}
-          GOOS=${GOOSARCH%/*}
-          GOARCH=${GOOSARCH#*/}
-          BINARY_NAME=${{github.repository}}-$GOOS-$GOARCH
-          echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
-          echo "GOOS=$GOOS" >> $GITHUB_ENV
-          echo "GOARCH=$GOARCH" >> $GITHUB_ENV
-      - name: Build
-        run: |
-          go build -o "$BINARY_NAME" -v
-      - name: Release Notes
-        run: git log $(git describe HEAD~ --tags --abbrev=0)..HEAD --pretty='format:* %h %s%n  * %an <%ae>' --no-merges >> ".github/RELEASE-TEMPLATE.md"
-      - name: Release with Notes
-        uses: softprops/action-gh-release@v1
-        with:
-          body_path: ".github/RELEASE-TEMPLATE.md"
-          draft: true
-          files: ${{env.BINARY_NAME}}
+      # debug
+      - name: Dump env
+        run: env | sort
+      - name: Dump GitHub context
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
+
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # get all tags, needed to get git log
+          ref: main
+
+      # Go environment
+      - name: setup Go Lang
+        uses: actions/setup-go@v3
+        with:
+          go-version: "^1.21.6"
+      - run: |
+          go version
+          cd src
+          go mod init ${GITHUB_REPOSITORY}
+          go mod tidy
+          go build -ldflags "-X main.Version=${GITHUB_REF_NAME} -X main.BuiltBy=github-actions" main.go
+
+      - run: git version
+      - run: git branch
+      - run: git tag
+
+      - name: get semantic tag version and release notes from commit messages
+        id: tag
+        run: |
+          curtag=${GITHUB_REF_NAME}
+          major_minor=$(echo "$curtag" | cut -d'.' -f1-2)
+          patch=$(echo "$curtag" | cut -d'.' -f3)
+          # avoid empty patch number
+          [ -n "$patch" ] && ((patch--)) || patch=".x"
+          prevtag="${major_minor}.${patch}"
+
+          echo "" > body.log
+          if git tag | grep $prevtag ; then
+            git log -q ${curtag}...${prevtag} --pretty="- %s" -q --no-color >> body.log
+          else
+            git log --pretty="- %s" -q --no-color >> body.log
+          fi
+          line_count=$(cat body.log | wc -l)
+
+          echo "curtag=$curtag" >> $GITHUB_OUTPUT
+          echo "prevtag=$prevtag" >> $GITHUB_OUTPUT
+          echo "line_count=$line_count" >> $GITHUB_OUTPUT
+
+      - run: echo curtag is ${{ steps.tag.outputs.curtag }}
+      - run: echo prevtag is ${{ steps.tag.outputs.prevtag }}
+      - run: echo line_count is ${{ steps.tag.outputs.line_count }}
+      - run: cat body.log
+
+      #  create Github release with release note from file and binary asset attached
+      - uses: ncipollo/release-action@v1
+        with:
+          name: ${{ env.GITHUB_REF_NAME }}
+          tag: ${{ env.GITHUB_REF_NAME }}
+          artifacts: "src/main"
+          bodyFile: "body.log"
+          token: ${{ secrets.GITHUB_TOKEN }}
