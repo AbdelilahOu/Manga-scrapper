@@ -242,7 +242,7 @@ func main() {
 		chapterPath := "./assets/" + mangaDetails.title + "/" + chapter.name
 		createFolder(chapterPath)
 		images := getChapterImages(chapter.url)
-		fmt.Println(infoStyle.Render(fmt.Sprintf("getting %s", chapter.name)))
+		fmt.Println(infoStyle.Render(fmt.Sprintf("getting %s (%d images)", chapter.name, len(images))))
 		downloadImages(images, chapterPath)
 	}
 }
