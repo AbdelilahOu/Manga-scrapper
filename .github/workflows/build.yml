@@ -1,9 +1,9 @@
 on:
   push:
-    # Sequence of patterns matched against refs/tags
-    tags:
-      - "v*" # Push events to matching v*, i.e. v1.0, v20.15.10
-
+    branches: [main]
+  pull_request:
+    branches: [main]
+    
 name: Latest Release
 
 defaults:
@@ -32,25 +32,15 @@ jobs:
     needs: test
     strategy:
       matrix:
-        goosarch:
-          - "aix/ppc64"
-          - "darwin/amd64"
-          - "darwin/arm64"
-          - "linux/386"
-          - "linux/amd64"
-          - "linux/arm"
-          - "linux/arm64"
-          - "linux/mips"
-          - "linux/mips64"
-          - "linux/mips64le"
-          - "linux/mipsle"
-          - "linux/ppc64"
-          - "linux/ppc64le"
-          - "linux/riscv64"
-          - "linux/s390x"
-          - "windows/386"
-          - "windows/amd64"
-          - "windows/arm"
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            release_suffix: ubuntu
+          - os: macos-latest
+            release_suffix: mac
+          - os: windows-latest
+            release_suffix: windows
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
