@@ -234,9 +234,8 @@ func main() {
 			lipgloss.WithWhitespaceForeground(lipgloss.AdaptiveColor{Light: "#3b82f6", Dark: "#bfdbfe"}),
 		)
 
-		fmt.Println(dialog)
+		fmt.Println(dialog + "\n")
 	}
-	fmt.Println("")
 	for i := range chapters {
 		chapter := chapters[len(chapters)-1-i]
 		chapterPath := "./assets/" + mangaDetails.title + "/" + chapter.name
