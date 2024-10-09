@@ -5,6 +5,7 @@ go 1.21.6
 require (
 	github.com/PuerkitoBio/goquery v1.9.2
 	github.com/charmbracelet/lipgloss v0.10.0
+	github.com/jung-kurt/gofpdf v1.16.2
 )
 
 require (
